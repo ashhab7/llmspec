@@ -69,7 +69,7 @@ def benchmark(fn, print_prefix, use_profiler=True, *args, **kwargs):
 
     print(f"\n [benchmark] {print_prefix}, tokens/sec: {len(output[0]) / t.elapsed / TEST_TIME}, {t.elapsed / TEST_TIME} sec generates {len(output[0])} tokens")
 
-def generate(input_text, approx_model_name, target_model_name, num_tokens=20, gamma = 4,
+def generate(input_text, approx_model_name, target_model_name, num_tokens=20, gamma = 5,
              random_seed = None, verbose = False, use_benchmark = False, use_profiling = False):
     # NOTE() approx_model_name and target_model_name should use the same tokenizer!
     
