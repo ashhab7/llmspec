@@ -1,11 +1,15 @@
+
 import torch
 import argparse
 import contexttimer
 from colorama import Fore, Style
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
-from sampling import autoregressive_sampling, speculative_sampling, speculative_sampling_v2, speculative_sampling_multiple_samples
+from sampling import autoregressive_sampling, speculative_sampling, speculative_sampling_v2
 from globals import Decoder
+
+
+
 
 # my local models
 MODELZOO = {
@@ -34,8 +38,6 @@ def parse_arguments():
     parser.add_argument('--profiling', '-p', action='store_true', default=False, help='collect torch profiler results.')
     parser.add_argument('--max_tokens', '-M', type=int, default=20, help='max token number generated.')
     parser.add_argument('--gamma', '-g', type=int, default=4, help='guess time.')
-    parser.add_argument('--samples', '-n', type=int, default=1, help='number of samples taken from an input.')
-
     args = parser.parse_args()
     return args
 
@@ -44,7 +46,7 @@ def color_print(text):
     print(Fore.RED + text + Style.RESET_ALL)
     
 def benchmark(fn, print_prefix, use_profiler=True, *args, **kwargs):
-    TEST_TIME = 3
+    TEST_TIME = 10
     profile_filename = f"./profile_logs/{print_prefix}"
     
     with contexttimer.Timer() as t:
@@ -65,15 +67,14 @@ def benchmark(fn, print_prefix, use_profiler=True, *args, **kwargs):
                 output = fn(*args, **kwargs)
 
     print(f"\n [benchmark] {print_prefix}, tokens/sec: {len(output[0]) / t.elapsed / TEST_TIME}, {t.elapsed / TEST_TIME} sec generates {len(output[0])} tokens")
-    return len(output[0]) / t.elapsed / TEST_TIME
 
-def generate(input_text, approx_model_name, target_model_name, num_tokens=20, gamma = 4, samples = 1,
+def generate(input_text, approx_model_name, target_model_name, num_tokens=20, gamma = 4,
              random_seed = None, verbose = False, use_benchmark = False, use_profiling = False):
     # NOTE() approx_model_name and target_model_name should use the same tokenizer!
     
     torch_device = 'cuda' if torch.cuda.is_available() else 'cpu'
     
-    tokenizer = AutoTokenizer.from_pretrained(approx_model_name, trust_remote_code=True, cache_dir="/p/srstorage/huggingface/cache")
+    tokenizer = AutoTokenizer.from_pretrained(approx_model_name, trust_remote_code=True)
   
     Decoder().set_tokenizer(tokenizer)
     
@@ -81,23 +82,17 @@ def generate(input_text, approx_model_name, target_model_name, num_tokens=20, ga
     small_model = AutoModelForCausalLM.from_pretrained(approx_model_name, 
                                                        torch_dtype=torch.float16,
                                                        device_map="auto",
-                                                       trust_remote_code=True,
-                                                       cache_dir="/p/srstorage/huggingface/cache")
+                                                       trust_remote_code=True)
     large_model = AutoModelForCausalLM.from_pretrained(target_model_name, 
                                                        torch_dtype=torch.float16,
                                                        device_map="auto",
-                                                       trust_remote_code=True,
-                                                       cache_dir="/p/srstorage/huggingface/cache")
+                                                       trust_remote_code=True)
     print("finish loading models")
     
     input_ids = tokenizer.encode(input_text, return_tensors='pt').to(torch_device)
 
-    #top_k = 20
-    #top_p = 0.9
-    top_p = 0.8
-    top_k = 1000
-    #top_k = 1
-    #top_p = 1
+    top_k = 20
+    top_p = 0.9
 
     torch.manual_seed(123)
     output = autoregressive_sampling(input_ids, large_model, num_tokens, top_k = top_k, top_p=top_p)
@@ -105,43 +100,34 @@ def generate(input_text, approx_model_name, target_model_name, num_tokens=20, ga
     color_print(f"large (target) model autoregressive_sampling: {generated_text}")
     
     if use_benchmark:
-        large_tokens_per_second = benchmark(autoregressive_sampling, "AS_large", use_profiling,
+        benchmark(autoregressive_sampling, "AS_large", use_profiling,
                   input_ids, large_model, num_tokens, top_k = top_k, top_p=top_p)
 
-    # torch.manual_seed(123)
-    # output = autoregressive_sampling(input_ids, small_model, num_tokens, top_k = top_k, top_p=top_p)
-    # generated_text = tokenizer.decode(output[0], skip_special_tokens=True)
-    # color_print(f"small (approx) model autoregressive_sampling: {generated_text}")
-    
-    # if use_benchmark:
-    #     benchmark(autoregressive_sampling, "AS_small", use_profiling,
-    #               input_ids, small_model, num_tokens, top_k = top_k, top_p=top_p)
-    
-    # torch.manual_seed(123)
-    # output = speculative_sampling(input_ids, small_model, large_model, num_tokens, gamma = gamma, top_k = top_k, top_p=top_p, random_seed = random_seed, verbose = verbose)
-    # generated_text = tokenizer.decode(output[0], skip_special_tokens=True)
-    # color_print(f"google's speculative_sampling: {generated_text}")
-    
-    # if use_benchmark:
-    #     sp_tokens_per_second_google = benchmark(speculative_sampling, "SP", use_profiling,
-    #               input_ids, small_model, large_model, max_len = num_tokens, gamma = gamma, top_k = top_k, top_p=top_p, random_seed = random_seed)
-    # print("Google Speedup percentage is: ", ((sp_tokens_per_second_google - large_tokens_per_second)/large_tokens_per_second)*100)
-
     torch.manual_seed(123)
-    # output = speculative_sampling_v2(input_ids, small_model, large_model, num_tokens, gamma = gamma, top_k = top_k, top_p=top_p, random_seed = random_seed, verbose = verbose)
-    # generated_text = tokenizer.decode(output[0], skip_special_tokens=True)
-
-    output = speculative_sampling_multiple_samples(input_ids, small_model, large_model, num_tokens, gamma = gamma, samples = samples, top_k = top_k, top_p=top_p, random_seed = random_seed)
+    output = autoregressive_sampling(input_ids, small_model, num_tokens, top_k = top_k, top_p=top_p)
+    generated_text = tokenizer.decode(output[0], skip_special_tokens=True)
+    color_print(f"small (approx) model autoregressive_sampling: {generated_text}")
+    
+    if use_benchmark:
+        benchmark(autoregressive_sampling, "AS_small", use_profiling,
+                  input_ids, small_model, num_tokens, top_k = top_k, top_p=top_p)
+    
+    torch.manual_seed(123)
+    output = speculative_sampling_v2(input_ids, small_model, large_model, num_tokens, top_k = top_k, top_p=top_p, random_seed = random_seed)
     generated_text = tokenizer.decode(output[0], skip_special_tokens=True)
     color_print(f"deepmind's speculative_sampling: {generated_text}")   
 
-    # if use_benchmark:
-    #     sp_tokens_per_second_dm = benchmark(speculative_sampling_v2, "SP", use_profiling,
-    #               input_ids, small_model, large_model, max_len = num_tokens, gamma = gamma, top_k = top_k, top_p=top_p, random_seed = random_seed)
-    # print("Deepmind Speedup percentage is: ", ((sp_tokens_per_second_dm - large_tokens_per_second)/large_tokens_per_second)*100)
+    torch.manual_seed(123)
+    output = speculative_sampling(input_ids, small_model, large_model, num_tokens, gamma = gamma, top_k = top_k, top_p=top_p, random_seed = random_seed, verbose = verbose)
+    generated_text = tokenizer.decode(output[0], skip_special_tokens=True)
+    color_print(f"google's speculative_sampling: {generated_text}")
+    
+    if use_benchmark:
+        benchmark(speculative_sampling, "SP", use_profiling,
+                  input_ids, small_model, large_model, max_len = num_tokens, gamma = gamma, top_k = top_k, top_p=top_p, random_seed = random_seed)
 
 if __name__ == "__main__":
     args = parse_arguments()
     
-    generate(args.input, args.approx_model_name, args.target_model_name, num_tokens=args.max_tokens, gamma=args.gamma, samples=args.samples,
+    generate(args.input, args.approx_model_name, args.target_model_name, num_tokens=args.max_tokens, gamma=args.gamma,
              random_seed = args.seed, verbose=args.verbose, use_benchmark = args.benchmark)
