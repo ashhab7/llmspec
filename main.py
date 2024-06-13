@@ -99,7 +99,7 @@ def generate(input_text, approx_model_name, target_model_name, num_tokens=20, ga
     output = autoregressive_sampling(input_ids, large_model, num_tokens, top_k = top_k, top_p=top_p)
     generated_text = tokenizer.decode(output[0], skip_special_tokens=True)
     end = time.perf_counter()
-    color_print(f"Ela[sed Time for AR = {end - start}")
+    print(f"Elapsed Time for AR = {end - start}")
     color_print(f"large (target) model autoregressive_sampling: {generated_text}")
     
     if use_benchmark:
@@ -125,8 +125,8 @@ def generate(input_text, approx_model_name, target_model_name, num_tokens=20, ga
     output = speculative_sampling(input_ids, small_model, large_model, num_tokens, gamma = gamma, top_k = top_k, top_p=top_p, random_seed = random_seed, verbose = verbose)
     generated_text = tokenizer.decode(output[0], skip_special_tokens=True)
     end = time.perf_counter()
-    color_print(f"Gamma = {gamma}")
-    color_print(f"Elapsed Time for Google Speculative Sampling = {end - start}")
+    print(f"Gamma = {gamma}")
+    print(f"Elapsed Time for Google Speculative Sampling = {end - start}")
     color_print(f"google's speculative_sampling: {generated_text}")
     
     if use_benchmark:
